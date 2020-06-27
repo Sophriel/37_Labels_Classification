@@ -32,8 +32,8 @@ answer_list = []
 total_epoch = 1000
 Leaning_Rate = 0.001
 
-#아래 둘중 1개 선택
 model_type ="VGG"
+#model_type ="DenseNet"
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -79,7 +79,7 @@ def fit(epoch, model, data_loader, phase='training', volatile=False, is_cuda=Tru
 
 
 
-    if model_type == "mymodel":
+    if model_type == "DenseNet":
 
         # 내 모델 사용시
         # optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.5)
@@ -119,7 +119,7 @@ def fit(epoch, model, data_loader, phase='training', volatile=False, is_cuda=Tru
         output = model(data)
 
         #자체 모델 사용 시
-        if model_type == "mymodel":
+        if model_type == "DenseNet":
             loss = F.nll_loss(output, target)
             running_loss += F.nll_loss(output, target).data
 
@@ -175,8 +175,8 @@ def training():
         is_cuda = True
         print("cuda support")
 
-    TRAIN_PATH = "image_data_train_noise2"
-    TEST_PATH = "image_data_test_noise2"
+    TRAIN_PATH = "Imgs/Train"
+    TEST_PATH = "Imgs/Validate"
 
     simple_transform = transforms.Compose([transforms.Resize((32, 32))
                                               , transforms.ToTensor()
@@ -201,7 +201,9 @@ def training():
 
     print("-------------- model selection------------------")
     #내가 만든 모델
-    if model_type == "mymodel":
+    if model_type == "DenseNet":
+        model = models.densenet121(pretrained=True)
+        print(model)
 
         model = Net(len(train.classes))
 
