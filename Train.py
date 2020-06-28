@@ -1,153 +1,88 @@
-from glob import glob
-import os
 import numpy as np
 import matplotlib.pyplot as plt
-import shutil
-from torchvision import transforms
 from torchvision import models
 import torch
-from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.optim import lr_scheduler
+from collections import OrderedDict
 from torch import optim
+from torchsummary import summary
 from torchvision.datasets import ImageFolder
-from torchvision.utils import make_grid
 from torch.utils.data import Dataset, DataLoader
-import time
-
-from sklearn.metrics import confusion_matrix
 
 from torchvision import datasets, transforms
 
-import itertools
-
-# from Parameters import gound_truth_list, answer_list
-
-import sklearn.metrics._plot.tests.test_plot_confusion_matrix
-
-
 gound_truth_list = []
 answer_list = []
-total_epoch = 1000
+total_epoch = 30
 Leaning_Rate = 0.001
 
-model_type ="VGG"
-#model_type ="DenseNet"
-
+model_type = "custom"
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-def imshow(inp, cmap=None):
-    """Imshow for Tensor."""
-    inp = inp.numpy().transpose((1, 2, 0))
-    mean = np.array([0.485, 0.456, 0.406])
-    std = np.array([0.229, 0.224, 0.225])
-    inp = std * inp + mean
-    inp = np.clip(inp, 0, 1)
-    plt.imshow(inp, cmap)
-
-
 class Net(nn.Module):
-    def __init__(self, output_size):
-        super().__init__()
-        self.conv1 = nn.Conv2d(3, 10, kernel_size=5)
-        self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
-        self.conv2_drop = nn.Dropout2d()
-        self.fc1 = nn.Linear(500, 50, bias=True)
-        self.fc2 = nn.Linear(50, 9)
+    def __init__(self):
+        super(Net, self).__init__()
 
+        self.layer1 = nn.Sequential(
+            nn.Conv2d(in_channels=3, out_channels=64, kernel_size=3),
+            nn.LeakyReLU(0.2),
+            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3),
+            nn.LeakyReLU(0.2),
+            nn.MaxPool2d(2, 2)
+        )
 
-
+        self.classfier = nn.Sequential(
+            nn.Linear(in_features=774400, out_features=64)
+        )
 
     def forward(self, x):
-        x = F.relu(F.max_pool2d(self.conv1(x), 2)).cuda()
-        # print("x shape1:{}".format(x.shape))
-
-        x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2)).cuda()
-        # print("x shape2:{}".format(x.shape))
-
-        x = x.view(x.size(0), -1).cuda()
-        # print("x shape3:{}".format(x.shape))
-
-        x = F.relu(self.fc1(x)).cuda()
-        x = F.relu(self.fc2(x)).cuda()
-
-        return F.log_softmax(x, -1).cuda()
-
+        x = self.layer1(x)
+        x = x.view(x.size(0), -1)
+        x = self.classfier(x)
+        x = F.log_softmax(x, -1)
+        return x
 
 def fit(epoch, model, data_loader, phase='training', volatile=False, is_cuda=True):
+    #  loss, optimizer
+    if model_type == "custom":
+        criterion = F.cross_entropy
+        optimizer = optim.Adam(model.parameters(), lr=Leaning_Rate)
 
-
-
-    if model_type == "DenseNet":
-
-        # 내 모델 사용시
-        # optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.5)
-        optimizer = optim.SGD(model.parameters(), lr=Leaning_Rate, momentum=0.5)
-
-    elif model_type == "VGG":
-
-        #VGG 사용시
-        optimizer = optim.SGD(model.classifier.parameters(), lr=Leaning_Rate, momentum=0.5)
-
+    elif model_type == "vgg":
+        criterion = F.cross_entropy
+        optimizer = optim.SGD(model.parameters(), lr=Leaning_Rate)
 
     if phase == 'training':
         model.train()
     if phase == 'validation':
         model.eval()
-        volatile = True
 
     running_loss = 0.0
     running_correct = 0
 
     for batch_idx, (data, target) in enumerate(data_loader):
-
-
-        #print("is_cuda inside:{}".format(is_cuda))
         if is_cuda:
             data = data.to('cuda', non_blocking=True)
             target = target.to('cuda', non_blocking=True)
 
-        # data, target = data.cuda(), target.cuda()
-
-        #data, target = Variable(data, volatile), Variable(target)
         if phase == 'training':
             optimizer.zero_grad()
 
-
-        # print("data shape:{}".format(data.shape))
         output = model(data)
 
-        #자체 모델 사용 시
-        if model_type == "DenseNet":
-            loss = F.nll_loss(output, target)
-            running_loss += F.nll_loss(output, target).data
-
-        # VGG 사용 시
-        elif model_type == "VGG":
-            loss = F.cross_entropy(output, target)
-            running_loss += F.cross_entropy(output, target).data
-        #----------------------------------------------------------------------
+        loss = criterion(output, target).cuda() if is_cuda else criterion(output, target)
+        running_loss += criterion(output, target).data
 
         preds = output.data.max(dim=1, keepdim=True)[1]
-
         gound_truth = target.data
-
-        # print("preds:{}".format(preds))
-
         answer = preds.squeeze()
-
-        # print("gound_truth:{}".format(gound_truth))
-        # print("answer:{}".format(answer))
 
         a = gound_truth.data.detach().cpu().numpy()
         b = answer.data.detach().cpu().numpy()
 
         gound_truth_list.append(a)
         answer_list.append(b)
-
-        # print("ground_truth numpy:{}".format(a))
-        # print("answer numpy:{}".format(b))
 
         running_correct += preds.eq(target.data.view_as(preds)).cpu().sum()
 
@@ -157,11 +92,7 @@ def fit(epoch, model, data_loader, phase='training', volatile=False, is_cuda=Tru
 
     loss = running_loss / len(data_loader.dataset)
     accuracy = 100. * running_correct.item() / len(data_loader.dataset)
-    print(
-        f'{phase} loss is {loss:{5}.{2}} and {phase} accuracy is {running_correct}/{len(data_loader.dataset)}{accuracy:{10}.{4}}')
-
-    # print("gound_truth_list:{}".format(gound_truth_list))
-    # print("answer_list:{}".format(answer_list))
+    print(f'{phase} loss is {loss:{5}.{2}} and {phase} accuracy is {running_correct}/{len(data_loader.dataset)}{accuracy:{10}.{4}}')
 
     return loss, accuracy
 
@@ -175,15 +106,16 @@ def training():
         is_cuda = True
         print("cuda support")
 
-    TRAIN_PATH = "Imgs/Train"
-    TEST_PATH = "Imgs/Validate"
+    TRAIN_PATH = "Imgs"
+    TEST_PATH = "Imgs"
 
-    simple_transform = transforms.Compose([transforms.Resize((32, 32))
-                                              , transforms.ToTensor()
-                                              , transforms.Normalize((0.1307,), (0.3081,))])
+    my_transform = transforms.Compose([transforms.Resize((224, 224)),
+                                       transforms.ToTensor(),
+                                       transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+                                       ])
 
-    train = ImageFolder(TRAIN_PATH, simple_transform)
-    test = ImageFolder(TEST_PATH, simple_transform)
+    train = ImageFolder(TRAIN_PATH, my_transform)
+    test = ImageFolder(TEST_PATH, my_transform)
 
     print("len data1:{}".format(len(train)))
     print("len data2:{}".format(len(test)))
@@ -192,32 +124,21 @@ def training():
     print("class:{}".format(train.classes))
     print("len:{}".format(len(train.classes)))
 
-    train_data_loader = torch.utils.data.DataLoader(train, batch_size=64, num_workers=4, pin_memory=True, shuffle=True)
-    valid_data_loader = torch.utils.data.DataLoader(test, batch_size=64, num_workers=4, shuffle=False)
+    train_data_loader = torch.utils.data.DataLoader(train, batch_size=16, num_workers=4,  pin_memory=True if is_cuda else False, shuffle=True)
+    valid_data_loader = torch.utils.data.DataLoader(test, batch_size=16, num_workers=4, pin_memory=True if is_cuda else False, shuffle=False)
 
     print("------------- data load finished -------------------------")
 
-    # wandb.watch(model, log="all")
-
     print("-------------- model selection------------------")
-    #내가 만든 모델
-    if model_type == "DenseNet":
-        model = models.densenet121(pretrained=True)
-        print(model)
 
-        model = Net(len(train.classes))
+    #  model selection
+    if model_type == "custom":
+        model = Net().to(device)
 
-        if is_cuda:
-            model.cuda()
-            print("model send to cuda()")
+    elif model_type == "vgg":
+        model = models.vgg19(pretrained=True).to(device)
 
-    elif model_type == "VGG":
-        #VGG 모델
-        model = models.vgg16(pretrained=True).to(device)
-        print("model:{}".format(model) )
-        model.classifier[6].out_features = 9
-
-    #for param in model.features.parameters(): param.requires_grad = False
+    summary(model, (3, 224, 224), 16)
 
     graph_epoch = []
     train_losses = []
@@ -246,20 +167,6 @@ def training():
         val_losses.append(c)
         val_accuracy.append(d)
 
-        # print("train_losses:{}".format(train_losses))
-
-        if epoch % 10 == 1:
-            savePath = "./model/model_" + str(model_type) + str(epoch) + ".pth"
-            torch.save(model.state_dict(), savePath)
-            print("file save at {}".format(savePath))
-            # wandb.save(savePath)
-
-
-    # print("train_loss:{}".format(train_losses))
-
-    # ---------------------------------------------
-    # loss graph
-
     x_len = np.arange(len(train_losses))
     plt.plot(x_len, train_losses, marker='.', lw =1, c='red', label="train_losses")
     plt.plot(x_len, val_losses, marker='.', lw =1, c='cyan', label="val_losses")
@@ -279,10 +186,6 @@ def training():
     plt.ylabel('accuracy')
     plt.show()
 
-    # print("list:{}".format(gound_truth_list))
-    # print("shape:{}".format(type(gound_truth_list)))
-
-
     gound_truth_list_1 = []
     for idx, data in enumerate(gound_truth_list):
         for j in data:
@@ -290,31 +193,12 @@ def training():
 
     print("gound truth list1:{}".format(gound_truth_list_1))
 
-    # print("list2:{}".format(answer_list))
-    # print("shape2:{}".format(type(answer_list)))
-
     ans_truth_list_1 = []
     for idx, data in enumerate(answer_list):
         for j in data:
             ans_truth_list_1.append(j)
 
     print("ans list2:{}".format(ans_truth_list_1))
-
-    my_class = ["info", "Comm", "Enter", "News", "Edu", "Shop", "Fin", "Photo", "Navi"]
-
-    # plot_confusion_matrix(gound_truth_list_1, ans_truth_list_1, classes=train.classes, normalize=True, title="Normalized Confusion Matrix")
-
-    confusion_matrix(gound_truth_list_1, ans_truth_list_1, classes=my_class, normalize=True,
-                          title="Normalized Confusion Matrix")
-    # plot_confusion_matrix(gound_truth_list_1, ans_truth_list_1, classes=my_class, normalize=True,
-    #                       title="Normalized Confusion Matrix")
-
-    plt.show()
-
-
-    # a= confusion_matrix(gound_truth_list_1, ans_truth_list_1)
-    # print("confusion matrix: \n {}".format(a))
-
 
 if __name__ == '__main__':
     training()
