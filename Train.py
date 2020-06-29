@@ -47,7 +47,7 @@ def fit(epoch, model, data_loader, phase='training', volatile=False, is_cuda=Tru
     #  loss, optimizer
     if model_type == "custom":
         criterion = F.cross_entropy
-        optimizer = optim.Adam(model.parameters(), lr=Leaning_Rate)
+        optimizer = optim.SGD(model.parameters(), lr=Leaning_Rate)
 
     elif model_type == "vgg":
         criterion = F.cross_entropy
