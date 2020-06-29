@@ -47,7 +47,7 @@ def fit(epoch, model, data_loader, phase='training', volatile=False, is_cuda=Tru
     #  loss, optimizer
     if model_type == "custom":
         criterion = F.cross_entropy
-        optimizer = optim.SGD(model.parameters(), lr=Leaning_Rate)
+        optimizer = optim.Adam(model.parameters(), lr=Leaning_Rate)
 
     elif model_type == "vgg":
         criterion = F.cross_entropy
@@ -106,26 +106,27 @@ def training():
         is_cuda = True
         print("cuda support")
 
-    TRAIN_PATH = "Imgs"
-    TEST_PATH = "Imgs"
+    IMG_PATH = "Imgs"
 
     my_transform = transforms.Compose([transforms.Resize((224, 224)),
                                        transforms.ToTensor(),
                                        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
                                        ])
 
-    train = ImageFolder(TRAIN_PATH, my_transform)
-    test = ImageFolder(TEST_PATH, my_transform)
+    Images = ImageFolder(IMG_PATH, my_transform)
+
+    print("class2idx:{}".format(Images.class_to_idx))
+    print("class:{}".format(Images.classes))
+    print("len:{}".format(len(Images.classes)))
+
+    train_size = int(len(Images) * 0.7)
+    train, val = torch.utils.data.random_split(Images, [train_size, len(Images) - train_size])
 
     print("len data1:{}".format(len(train)))
-    print("len data2:{}".format(len(test)))
-
-    print("class2idx:{}".format(train.class_to_idx))
-    print("class:{}".format(train.classes))
-    print("len:{}".format(len(train.classes)))
+    print("len data2:{}".format(len(val)))
 
     train_data_loader = torch.utils.data.DataLoader(train, batch_size=16, num_workers=4,  pin_memory=True if is_cuda else False, shuffle=True)
-    valid_data_loader = torch.utils.data.DataLoader(test, batch_size=16, num_workers=4, pin_memory=True if is_cuda else False, shuffle=False)
+    valid_data_loader = torch.utils.data.DataLoader(val, batch_size=16, num_workers=4, pin_memory=True if is_cuda else False, shuffle=False)
 
     print("------------- data load finished -------------------------")
 
